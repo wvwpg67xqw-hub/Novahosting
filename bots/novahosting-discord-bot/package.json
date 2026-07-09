@@ -1,0 +1,18 @@
+{
+  "name": "@workspace/novahosting-discord-bot",
+  "version": "1.0.0",
+  "private": true,
+  "description": "NovaHosting Management Discord bot for staff to manage FeatherPanel customers and servers",
+  "type": "commonjs",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node index.js",
+    "deploy-commands": "node deployCommands.js"
+  },
+  "dependencies": {
+    "discord.js": "^14.16.3",
+    "axios": "^1.7.9",
+    "dotenv": "^16.4.7"
+  }
+}
