@@ -1,0 +1,46 @@
+name: Deploy Novahosting Bot
+
+on:
+  push:
+    branches:
+      - main
+
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Connect and deploy to VPS
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: 185.239.238.241
+          port: 4831
+          username: root
+          password: ${{ secrets.VPS_PASSWORD }}
+
+          script: |
+            cd /root
+
+            if [ ! -d "Novahosting" ]; then
+              git clone https://github.com/wvwpg67xqw-hub/Novahosting.git
+            fi
+
+            cd /root/Novahosting
+
+            git pull
+
+            cat > .env <<EOF
+DISCORD_TOKEN=${{ secrets.DISCORD_TOKEN }}
+DISCORD_CLIENT_ID=${{ secrets.DISCORD_CLIENT_ID }}
+DISCORD_GUILD_ID=${{ secrets.DISCORD_GUILD_ID }}
+FEATHERPANEL_URL=${{ secrets.FEATHERPANEL_URL }}
+FEATHERPANEL_API_KEY=${{ secrets.FEATHERPANEL_API_KEY }}
+STAFF_ROLE_ID=${{ secrets.STAFF_ROLE_ID }}
+LOG_CHANNEL_ID=${{ secrets.LOG_CHANNEL_ID }}
+EOF
+
+            chmod 600 .env
+
+            echo "Deployment complete"
