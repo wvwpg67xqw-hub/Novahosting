@@ -49,9 +49,10 @@ module.exports = {
       { name: "Node", value: `${server.node ?? "Unknown"}`, inline: true },
       { name: "Suspended", value: server.suspended ? "Yes" : "No", inline: true },
     ];
-    // Live resource usage (CPU/RAM/state) requires Pterodactyl's Client API,
-    // which the installed FeatherPanel plugin does not expose — see
-    // services/servers.js for details. Only static panel data is shown here.
+    // Live resource usage (CPU/RAM/state) is only available via the
+    // customer's own session-scoped power route, not the admin API used
+    // here — see services/servers.js for details. Only static panel data
+    // is shown here.
 
     await interaction.editReply({
       embeds: [infoEmbed({ title: `Server: ${server.name || identifier}`, fields })],

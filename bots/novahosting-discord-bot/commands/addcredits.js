@@ -32,7 +32,7 @@ module.exports = {
     if (!panelUser) return;
 
     try {
-      await billingService.addCredits(panelUser.id, amount, `Added by staff via Discord (${interaction.user.tag})`);
+      await billingService.addCredits(panelUser.uuid, amount, `Added by staff via Discord (${interaction.user.tag})`);
     } catch (err) {
       await interaction.editReply({
         embeds: [errorEmbed({ title: "Add credits failed", description: err.message })],

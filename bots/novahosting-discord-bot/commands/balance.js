@@ -23,7 +23,7 @@ module.exports = {
 
     let balance;
     try {
-      balance = await billingService.getBalance(panelUser.id);
+      balance = await billingService.getBalance(panelUser.uuid);
     } catch (err) {
       await interaction.editReply({
         embeds: [errorEmbed({ title: "Balance lookup failed", description: err.message })],

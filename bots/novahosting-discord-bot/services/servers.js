@@ -1,57 +1,71 @@
 const { client } = require("./featherpanel");
 
 /**
- * Servers service — wraps the PterodactylPanelApi plugin's server-management
- * endpoints (confirmed against https://github.com/featherpanel-com/PterodactylPanelApi).
+ * Servers service — wraps FeatherPanel's native admin server-management API,
+ * confirmed directly against the live instance's route definitions
+ * (app/routes/admin/servers.php).
  *
  * Confirmed endpoints:
- *   GET    /api/application/servers                          list servers
- *   GET    /api/application/servers/:id                       server details by id
- *   GET    /api/application/servers/external/:external_id     server details by external id
- *   POST   /api/application/servers/:id/suspend                suspend
- *   POST   /api/application/servers/:id/unsuspend               unsuspend
- *   POST   /api/application/servers/:id/reinstall                reinstall
- *   DELETE /api/application/servers/:id                         delete
- *   PATCH  /api/application/servers/:id/details                 update details
- *   PATCH  /api/application/servers/:id/build                   update build
- *   PATCH  /api/application/servers/:id/startup                 update startup
+ *   GET    /api/admin/servers                          list servers
+ *   GET    /api/admin/servers/:id                       server details (numeric id)
+ *   GET    /api/admin/servers/external/:externalId      server details by external id
+ *   GET    /api/admin/servers/owner/:ownerId            servers owned by a user (numeric owner id —
+ *                                                        NOT the same as a user's UUID; kept here for
+ *                                                        completeness, but services/users.js#getOwnedServers
+ *                                                        uses the UUID-keyed /api/admin/users/:uuid/servers
+ *                                                        endpoint instead, since that's what the rest of
+ *                                                        this bot works with)
+ *   POST   /api/admin/servers/:id/suspend               suspend
+ *   POST   /api/admin/servers/:id/unsuspend             unsuspend
  *
- * IMPORTANT: this plugin only implements Pterodactyl's *Application* API
- * (admin/management actions). Power control (start/stop/restart) lives on
- * Pterodactyl's separate *Client* API, which this plugin does not expose and
- * which normally requires a per-user client API key rather than the admin
- * key configured here. start/stop/restart are therefore NOT currently
- * possible through this integration — the command handlers report this
- * clearly rather than silently failing. If your panel later adds a client
- * API (or Wings-direct power endpoint), wire it in here.
+ * IMPORTANT: this panel's power-control route
+ * (POST /api/user/servers/:uuidShort/power/:action) is registered as a
+ * *user session* route (registerServerRoute), scoped to a customer's own
+ * servers. There is no equivalent admin-level power route in this install
+ * (confirmed: no "power" routes anywhere under app/routes/admin). Start/
+ * stop/restart are therefore NOT possible through an admin API key here —
+ * command handlers report this clearly rather than silently failing.
  */
 
-function unwrap(data) {
-  return data?.attributes || data?.data?.attributes || data?.data || data;
+// FeatherPanel wraps responses as { success, data, ... }. Lists may nest
+// their array + pagination meta a couple of different ways depending on
+// controller; this defensively unwraps the common shapes.
+function unwrapItem(data) {
+  return data?.data ?? data;
+}
+
+function unwrapList(data) {
+  const body = data?.data ?? data;
+  if (Array.isArray(body)) return { items: body, pagination: data?.pagination ?? body?.pagination };
+  if (Array.isArray(body?.data)) return { items: body.data, pagination: body?.pagination ?? data?.pagination };
+  if (Array.isArray(body?.servers)) return { items: body.servers, pagination: body?.pagination };
+  return { items: [], pagination: null };
 }
 
 /**
- * List ALL servers across every page (no documented filter query param, so
- * ownership filtering happens client-side). Pagination follows Pterodactyl's
- * convention of a `meta.pagination.total_pages` field; if that's absent we
- * stop after the first page (single-page response).
+ * List ALL servers across every page. Pagination shape isn't fully
+ * documented here, so this checks common `pagination.total_pages` /
+ * `pagination.last_page` conventions and otherwise stops after one page.
  */
 async function listServers({ ownerId } = {}) {
+  if (ownerId != null) {
+    const { data } = await client.get(`/api/admin/servers/owner/${ownerId}`);
+    return unwrapList(data).items;
+  }
+
   const list = [];
   let page = 1;
   // Safety cap so a malformed/never-ending pagination response can't loop
-  // forever. If real data exceeds this, we throw rather than silently
-  // truncate results (see check below).
+  // forever. If real data exceeds this, throw rather than silently
+  // truncate results.
   const MAX_PAGES = 100;
   for (;;) {
-    const { data } = await client.get("/api/application/servers", {
-      params: { per_page: 200, page },
-    });
-    const pageItems = data?.data?.map(unwrap) || [];
-    list.push(...pageItems);
+    const { data } = await client.get("/api/admin/servers", { params: { per_page: 200, page } });
+    const { items, pagination } = unwrapList(data);
+    list.push(...items);
 
-    const totalPages = data?.meta?.pagination?.total_pages;
-    if (!totalPages || page >= totalPages || pageItems.length === 0) break;
+    const totalPages = pagination?.total_pages ?? pagination?.last_page;
+    if (!totalPages || page >= totalPages || items.length === 0) break;
 
     if (page >= MAX_PAGES) {
       throw new Error(
@@ -60,9 +74,7 @@ async function listServers({ ownerId } = {}) {
     }
     page += 1;
   }
-
-  if (ownerId == null) return list;
-  return list.filter((s) => String(s?.user) === String(ownerId));
+  return list;
 }
 
 async function listServersByOwner(ownerId) {
@@ -84,8 +96,8 @@ async function findServer(identifierOrId) {
   }
 
   try {
-    const { data } = await client.get(`/api/application/servers/external/${identifierOrId}`);
-    return unwrap(data);
+    const { data } = await client.get(`/api/admin/servers/external/${identifierOrId}`);
+    return unwrapItem(data);
   } catch (err) {
     // Only a real 404 means "no server with this external id" — any other
     // failure (network error, timeout, 401/500, etc.) must propagate so it
@@ -109,22 +121,22 @@ async function findServer(identifierOrId) {
  * Fetch full details for a server by panel id.
  */
 async function getServerDetails(panelId) {
-  const { data } = await client.get(`/api/application/servers/${panelId}`);
-  return unwrap(data);
+  const { data } = await client.get(`/api/admin/servers/${panelId}`);
+  return unwrapItem(data);
 }
 
 async function suspendServer(panelId) {
-  const { data } = await client.post(`/api/application/servers/${panelId}/suspend`);
+  const { data } = await client.post(`/api/admin/servers/${panelId}/suspend`);
   return data;
 }
 
 async function unsuspendServer(panelId) {
-  const { data } = await client.post(`/api/application/servers/${panelId}/unsuspend`);
+  const { data } = await client.post(`/api/admin/servers/${panelId}/unsuspend`);
   return data;
 }
 
 const POWER_ACTION_UNSUPPORTED_MESSAGE =
-  "Power control (start/stop/restart) is not available through the currently installed FeatherPanel API plugin — it only exposes management actions, not Pterodactyl's Client API. Ask your panel admin about adding client API / Wings-direct power support before this command can work.";
+  "Power control (start/stop/restart) is not available through the admin API on this FeatherPanel install — the only power route (`/api/user/servers/:uuidShort/power/:action`) requires the customer's own logged-in session, and there's no admin-level equivalent. Ask your panel admin if a Wings-direct or admin power route can be added before this command can work.";
 
 async function sendPowerAction() {
   const err = new Error(POWER_ACTION_UNSUPPORTED_MESSAGE);

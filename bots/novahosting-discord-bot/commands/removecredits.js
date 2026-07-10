@@ -32,7 +32,7 @@ module.exports = {
     if (!panelUser) return;
 
     try {
-      await billingService.removeCredits(panelUser.id, amount, `Removed by staff via Discord (${interaction.user.tag})`);
+      await billingService.removeCredits(panelUser.uuid, amount, `Removed by staff via Discord (${interaction.user.tag})`);
     } catch (err) {
       await interaction.editReply({
         embeds: [errorEmbed({ title: "Remove credits failed", description: err.message })],

@@ -22,9 +22,9 @@ module.exports = {
     if (!panelUser) return;
 
     let full = panelUser;
-    if (panelUser.id) {
+    if (panelUser.uuid) {
       try {
-        full = await usersService.getUserById(panelUser.id);
+        full = await usersService.getUserById(panelUser.uuid);
       } catch {
         // fall back to the summary record already fetched
       }
@@ -34,7 +34,7 @@ module.exports = {
       title: `Account: ${full.username || full.email || target.username}`,
       fields: [
         { name: "Discord User", value: `${target}`, inline: true },
-        { name: "Panel User ID", value: `${full.id ?? "Unknown"}`, inline: true },
+        { name: "Panel User UUID", value: `${full.uuid ?? "Unknown"}`, inline: true },
         { name: "Email", value: full.email || "Unknown", inline: true },
         { name: "Status", value: full.suspended ? "Suspended" : "Active", inline: true },
         {

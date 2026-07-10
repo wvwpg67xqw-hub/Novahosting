@@ -1,0 +1,1 @@
+- [FeatherPanel API discovery](featherpanel-api-discovery.md) — self-hosted panel API surface varies by install/fork; never trust a plugin README or Pterodactyl conventions, read the live route files on the VPS instead.

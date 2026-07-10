@@ -25,7 +25,7 @@ module.exports = {
 
     let result;
     try {
-      result = await usersService.unsuspendUser(panelUser.id);
+      result = await usersService.unsuspendUser(panelUser.uuid);
     } catch (err) {
       await interaction.editReply({
         embeds: [errorEmbed({ title: "Unsuspend failed", description: err.message })],

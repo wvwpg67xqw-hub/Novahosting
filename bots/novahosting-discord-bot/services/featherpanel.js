@@ -4,19 +4,21 @@ const config = require("../config/config");
 /**
  * Shared axios client for the FeatherPanel API.
  *
- * NOTE: FeatherPanel's exact REST surface depends on the panel version and
- * any installed add-ons (e.g. the Billing Core plugin). The paths below are
- * best-effort conventions modeled after Pterodactyl-style panels, which
- * FeatherPanel is derived from. Wherever an endpoint is uncertain, it is
- * clearly marked with a "PLACEHOLDER" comment describing what to verify
- * against your FeatherPanel instance's API docs before going live.
+ * Confirmed against the live instance's own route definitions
+ * (app/routes/admin/*.php, app/Middleware/AuthMiddleware.php) — this is
+ * FeatherPanel's native admin API, not a third-party plugin.
+ *
+ * Auth: `Authorization: Bearer <key>` where <key> is either the public or
+ * private key of a personal API client (Account -> API Clients in the
+ * panel UI). Admin access is granted purely by whether the underlying
+ * account has admin permissions — there is no separate "admin key" format.
  */
 const client = axios.create({
   baseURL: config.featherPanel.url,
   timeout: 15000,
   headers: {
     Authorization: `Bearer ${config.featherPanel.apiKey}`,
-    Accept: "application/vnd.pterodactyl.v1+json",
+    Accept: "application/json",
     "Content-Type": "application/json",
   },
 });
@@ -26,7 +28,7 @@ client.interceptors.response.use(
   (error) => {
     const status = error.response?.status;
     const message =
-      error.response?.data?.errors?.[0]?.detail ||
+      error.response?.data?.error_message ||
       error.response?.data?.message ||
       error.message ||
       "Unknown FeatherPanel API error";

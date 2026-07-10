@@ -36,7 +36,7 @@ module.exports = {
     if (!panelUser) return;
 
     try {
-      await billingService.refund(panelUser.id, amount, reason);
+      await billingService.refund(panelUser.uuid, amount, reason);
     } catch (err) {
       await interaction.editReply({
         embeds: [errorEmbed({ title: "Refund failed", description: err.message })],

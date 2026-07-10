@@ -2,29 +2,45 @@ const { client } = require("./featherpanel");
 const serversService = require("./servers");
 
 /**
- * Users service — wraps the PterodactylPanelApi plugin's user-management
- * endpoints (confirmed against https://github.com/featherpanel-com/PterodactylPanelApi).
+ * Users service — wraps FeatherPanel's native admin user-management API,
+ * confirmed directly against the live instance's route definitions
+ * (app/routes/admin/users.php).
  *
  * Confirmed endpoints:
- *   GET    /api/application/users                        list users
- *   GET    /api/application/users/:id                     view user by id
- *   GET    /api/application/users/external/:external_id   view user by external id
- *   PATCH  /api/application/users/:id                     update user
- *   DELETE /api/application/users/:id                     delete user
+ *   GET    /api/admin/users                          list users
+ *   GET    /api/admin/users/:uuid                     view user by UUID
+ *   GET    /api/admin/users/external/:externalId      view user by external id
+ *   GET    /api/admin/users/:uuid/servers             servers owned by a user
+ *   POST   /api/admin/users/:uuid/ban                 ban (real account-level ban!)
+ *   POST   /api/admin/users/:uuid/unban                unban
  *
- * IMPORTANT: this plugin does not expose a per-user "ban" or "suspend"
- * endpoint — suspension is a per-SERVER action (see services/servers.js).
- * "Suspending a user" here means suspending every server they own, and
- * ban/unban are implemented the same way. This is the closest available
- * equivalent; adjust if your panel adds a real account-level flag later.
+ * IMPORTANT: users here are identified by UUID (string), not a numeric id —
+ * this differs from servers, which use numeric ids. Don't mix the two up.
+ *
+ * This panel has a genuine account-level ban, unlike the community plugin
+ * this bot was originally built against — /ban and /unban call it directly.
+ * /suspend and /unsuspend remain server-level actions (there's no separate
+ * "suspend the account" concept here), applied across all of a user's
+ * servers via services/servers.js.
  *
  * Discord-ID linkage: uses FeatherPanel's built-in "external_id" field via
- * the dedicated /external/:external_id endpoint. Set each customer's
+ * the dedicated /external/:externalId endpoint. Set each customer's
  * external_id to their Discord user ID in FeatherPanel for lookups to work.
  */
 
-function unwrap(data) {
-  return data?.attributes || data?.data?.attributes || data?.data || data;
+// FeatherPanel wraps responses as { success, data, ... }. Lists may nest
+// their array + pagination meta a couple of different ways depending on
+// controller; this defensively unwraps the common shapes.
+function unwrapItem(data) {
+  return data?.data ?? data;
+}
+
+function unwrapList(data) {
+  const body = data?.data ?? data;
+  if (Array.isArray(body)) return { items: body, pagination: data?.pagination ?? body?.pagination };
+  if (Array.isArray(body?.data)) return { items: body.data, pagination: body?.pagination ?? data?.pagination };
+  if (Array.isArray(body?.users)) return { items: body.users, pagination: body?.pagination };
+  return { items: [], pagination: null };
 }
 
 /**
@@ -33,8 +49,8 @@ function unwrap(data) {
 async function findUser({ discordId, username, email } = {}) {
   if (discordId) {
     try {
-      const { data } = await client.get(`/api/application/users/external/${discordId}`);
-      return unwrap(data);
+      const { data } = await client.get(`/api/admin/users/external/${discordId}`);
+      return unwrapItem(data);
     } catch (err) {
       // Only a real 404 means "not linked" — any other failure (network
       // error, timeout, 401/500, etc.) must propagate as a real error.
@@ -60,9 +76,9 @@ async function findUser({ discordId, username, email } = {}) {
 }
 
 /**
- * List ALL users across every page. Follows Pterodactyl's pagination
- * convention (`meta.pagination.total_pages`); stops after one page if that
- * field is absent (single-page response).
+ * List ALL users across every page. Pagination shape isn't fully documented
+ * here, so this checks common `pagination.total_pages` / `pagination.last_page`
+ * conventions and otherwise stops after one page.
  */
 async function listAllUsers() {
   const list = [];
@@ -72,14 +88,12 @@ async function listAllUsers() {
   // truncate results.
   const MAX_PAGES = 100;
   for (;;) {
-    const { data } = await client.get("/api/application/users", {
-      params: { per_page: 200, page },
-    });
-    const pageItems = data?.data?.map(unwrap) || [];
-    list.push(...pageItems);
+    const { data } = await client.get("/api/admin/users", { params: { per_page: 200, page } });
+    const { items, pagination } = unwrapList(data);
+    list.push(...items);
 
-    const totalPages = data?.meta?.pagination?.total_pages;
-    if (!totalPages || page >= totalPages || pageItems.length === 0) break;
+    const totalPages = pagination?.total_pages ?? pagination?.last_page;
+    if (!totalPages || page >= totalPages || items.length === 0) break;
 
     if (page >= MAX_PAGES) {
       throw new Error(
@@ -92,21 +106,44 @@ async function listAllUsers() {
 }
 
 /**
- * Fetch full details for a single FeatherPanel user by panel user id.
+ * Fetch full details for a single FeatherPanel user by UUID.
  */
-async function getUserById(panelUserId) {
-  const { data } = await client.get(`/api/application/users/${panelUserId}`);
-  return unwrap(data);
+async function getUserById(uuid) {
+  const { data } = await client.get(`/api/admin/users/${uuid}`);
+  return unwrapItem(data);
 }
 
 /**
- * Runs an action against every server owned by a user and reports which
- * ones succeeded vs failed, instead of an all-or-nothing result — with
+ * List the servers owned by a user, by UUID, using the dedicated admin
+ * endpoint (rather than filtering the global server list client-side).
+ */
+async function getOwnedServers(uuid) {
+  const { data } = await client.get(`/api/admin/users/${uuid}/servers`);
+  return unwrapList(data).items;
+}
+
+/**
+ * Real account-level ban/unban — this panel supports it natively, unlike
+ * the community plugin this bot was originally built against.
+ */
+async function banUser(uuid, reason) {
+  const { data } = await client.post(`/api/admin/users/${uuid}/ban`, reason ? { reason } : {});
+  return data;
+}
+
+async function unbanUser(uuid) {
+  const { data } = await client.post(`/api/admin/users/${uuid}/unban`);
+  return data;
+}
+
+/**
+ * Runs an action against every server owned by a user (by UUID) and reports
+ * which ones succeeded vs failed, instead of an all-or-nothing result — with
  * many servers, a single flaky request shouldn't hide the rest as if the
  * whole operation succeeded (or silently drop the failures).
  */
-async function applyToAllServers(panelUserId, action) {
-  const servers = await serversService.listServersByOwner(panelUserId);
+async function applyToAllServers(uuid, action) {
+  const servers = await getOwnedServers(uuid);
   const results = await Promise.allSettled(servers.map((s) => action(s.id).then(() => s)));
 
   const succeeded = [];
@@ -123,32 +160,26 @@ async function applyToAllServers(panelUserId, action) {
 }
 
 /**
- * Suspend every server owned by this user. Used to back both the /ban and
- * /suspend commands, since the plugin only supports suspension at the
- * server level. Returns { total, succeeded, failed } — see applyToAllServers.
+ * Suspend every server owned by this user (numeric server ids under the
+ * hood; the user itself is looked up by UUID). Returns
+ * { total, succeeded, failed } — see applyToAllServers.
  */
-async function suspendAllServers(panelUserId) {
-  return applyToAllServers(panelUserId, (id) => serversService.suspendServer(id));
+async function suspendUser(uuid) {
+  return applyToAllServers(uuid, (id) => serversService.suspendServer(id));
 }
 
 /**
  * Unsuspend every server owned by this user. Returns
  * { total, succeeded, failed } — see applyToAllServers.
  */
-async function unsuspendAllServers(panelUserId) {
-  return applyToAllServers(panelUserId, (id) => serversService.unsuspendServer(id));
+async function unsuspendUser(uuid) {
+  return applyToAllServers(uuid, (id) => serversService.unsuspendServer(id));
 }
-
-// Ban/unban are aliases of suspend/unsuspend at the server level — see the
-// module comment above for why there's no separate account-level ban.
-const banUser = suspendAllServers;
-const unbanUser = unsuspendAllServers;
-const suspendUser = suspendAllServers;
-const unsuspendUser = unsuspendAllServers;
 
 module.exports = {
   findUser,
   getUserById,
+  getOwnedServers,
   banUser,
   unbanUser,
   suspendUser,
