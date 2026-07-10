@@ -9,7 +9,7 @@ const config = require("../config/config");
 module.exports = {
   data: new SlashCommandBuilder()
     .setName("unsuspend")
-    .setDescription("Lift a suspension on a customer's FeatherPanel account")
+    .setDescription("Lift suspension on all of a customer's FeatherPanel servers")
     .addUserOption((opt) =>
       opt.setName("user").setDescription("The Discord user to unsuspend").setRequired(true),
     ),
@@ -23,8 +23,9 @@ module.exports = {
     const panelUser = await resolvePanelUser(interaction, target);
     if (!panelUser) return;
 
+    let result;
     try {
-      await usersService.unsuspendUser(panelUser.id);
+      result = await usersService.unsuspendUser(panelUser.id);
     } catch (err) {
       await interaction.editReply({
         embeds: [errorEmbed({ title: "Unsuspend failed", description: err.message })],
@@ -32,11 +33,22 @@ module.exports = {
       return;
     }
 
+    const { total, succeeded, failed } = result;
+    const allFailed = total > 0 && failed.length === total;
+    const description =
+      total === 0
+        ? `${target} has no servers to unsuspend.`
+        : failed.length === 0
+          ? `All ${total} of ${target}'s FeatherPanel servers have been unsuspended.`
+          : `Unsuspended ${succeeded.length}/${total} of ${target}'s servers. ${failed.length} failed: ${failed
+              .map((f) => `#${f.server.id} (${f.error?.message || "unknown error"})`)
+              .join(", ")}`;
+
     await interaction.editReply({
       embeds: [
-        successEmbed({
-          title: "User Unsuspended",
-          description: `${target}'s FeatherPanel account has been reactivated.`,
+        (failed.length > 0 ? errorEmbed : successEmbed)({
+          title: allFailed ? "Unsuspend Failed" : failed.length > 0 ? "User Partially Unsuspended" : "User Unsuspended",
+          description,
         }),
       ],
     });

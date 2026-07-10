@@ -16,7 +16,7 @@ const client = axios.create({
   timeout: 15000,
   headers: {
     Authorization: `Bearer ${config.featherPanel.apiKey}`,
-    Accept: "application/json",
+    Accept: "application/vnd.pterodactyl.v1+json",
     "Content-Type": "application/json",
   },
 });

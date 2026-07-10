@@ -33,10 +33,15 @@ bots/novahosting-discord-bot/
 
 **User Management**
 - `/userinfo <user>` — Show a customer's FeatherPanel account details
-- `/ban <user> <reason>` — Ban a customer's panel account
-- `/unban <user>` — Unban a customer's panel account
-- `/suspend <user>` — Suspend a customer's panel account
-- `/unsuspend <user>` — Lift a suspension
+- `/ban <user> <reason>` — Ban a customer by suspending all of their servers
+- `/unban <user>` — Unban a customer by unsuspending all of their servers
+- `/suspend <user>` — Suspend all of a customer's servers
+- `/unsuspend <user>` — Lift a suspension on all of a customer's servers
+
+> FeatherPanel (via the installed API plugin) has no separate account-level
+> ban/suspend flag — suspension is a per-server action. `/ban` and `/suspend`
+> are therefore implemented identically: they suspend every server the
+> customer owns. See `services/users.js` for details.
 
 **Billing Management (FeatherPanel Billing Core)**
 - `/balance <user>` — Check a customer's account balance
@@ -45,10 +50,10 @@ bots/novahosting-discord-bot/
 - `/refund <user> <amount> <reason>` — Issue a refund
 
 **Server Management**
-- `/serverinfo <server>` — Look up server details and live state
-- `/start <server>` — Start a server
-- `/stop <server>` — Stop a server
-- `/restart <server>` — Restart a server
+- `/serverinfo <server>` — Look up server details (static panel data)
+- `/start <server>` — Start a server ⚠️ **not currently functional** — see below
+- `/stop <server>` — Stop a server ⚠️ **not currently functional** — see below
+- `/restart <server>` — Restart a server ⚠️ **not currently functional** — see below
 
 All commands are restricted to members with the `STAFF_ROLE_ID` role (or
 Discord Administrator permission), and every action is logged as an embed
@@ -59,15 +64,29 @@ in `LOG_CHANNEL_ID`.
 `services/users.js`, `services/servers.js`, and `services/billing.js` wrap
 the FeatherPanel REST API via a shared `axios` client (`services/featherpanel.js`).
 
-FeatherPanel's exact endpoint paths vary by version and installed add-ons
-(the Billing Core module is a plugin, not part of the base API). Every
-function that calls an endpoint whose exact path isn't guaranteed is marked
-with a `PLACEHOLDER` comment explaining what to verify and where to look
-(FeatherPanel API docs / Billing Core plugin docs) before going live.
-Search the `services/` folder for `PLACEHOLDER` to find every endpoint that
-needs confirming against your specific FeatherPanel installation.
+FeatherPanel's core API by itself only exposes System/Redirects endpoints —
+user, server, node, etc. management requires the community
+[**PterodactylPanelApi**](https://github.com/featherpanel-com/PterodactylPanelApi)
+plugin, which must be installed, enabled in Admin → Plugins, and the panel
+restarted before its routes become live. `services/users.js` and
+`services/servers.js` are written against that plugin's documented endpoints
+(list/get/update/delete users, list/get/suspend/unsuspend/reinstall/delete
+servers). Known limitations of that plugin:
 
-User lookups by Discord ID also assume your FeatherPanel users have a
-custom identifier field (e.g. `external_id`) populated with their Discord
-ID — update `services/users.js#findUser` if your panel links accounts
-differently (e.g. by email tied to your Discord verification flow).
+- **No account-level ban/suspend** — only per-server suspension exists.
+  `/ban` and `/suspend` suspend every server the customer owns instead.
+- **No power control (start/stop/restart)** — that requires Pterodactyl's
+  separate Client API (normally a per-user client key, not the admin key
+  used here), which this plugin doesn't implement. The `/start`, `/stop`,
+  and `/restart` commands report this clearly rather than silently failing;
+  wire in a real endpoint here if your panel later adds one.
+- **No billing endpoints** — `services/billing.js` still targets a
+  hypothetical Billing Core plugin with `PLACEHOLDER` paths. If you use a
+  different billing plugin, fetch its real routes the same way (its
+  `/api/openapi.json` or a browser Network-tab capture of the admin UI) and
+  update `services/billing.js` accordingly.
+
+User lookups by Discord ID use FeatherPanel's built-in `external_id` field
+via `GET /api/application/users/external/:external_id` — set each
+customer's `external_id` to their Discord user ID in FeatherPanel for
+`/userinfo`, `/ban`, `/suspend`, etc. to find them.

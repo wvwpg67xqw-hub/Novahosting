@@ -42,13 +42,6 @@ module.exports = {
       return;
     }
 
-    let resources = null;
-    try {
-      resources = await serversService.getServerResources(server.identifier || identifier);
-    } catch {
-      // resource usage is best-effort; ignore failures here
-    }
-
     const fields = [
       { name: "Name", value: server.name || "Unknown", inline: true },
       { name: "Identifier", value: server.identifier || identifier, inline: true },
@@ -56,14 +49,9 @@ module.exports = {
       { name: "Node", value: `${server.node ?? "Unknown"}`, inline: true },
       { name: "Suspended", value: server.suspended ? "Yes" : "No", inline: true },
     ];
-
-    if (resources) {
-      fields.push({
-        name: "State",
-        value: resources.current_state || resources.state || "Unknown",
-        inline: true,
-      });
-    }
+    // Live resource usage (CPU/RAM/state) requires Pterodactyl's Client API,
+    // which the installed FeatherPanel plugin does not expose — see
+    // services/servers.js for details. Only static panel data is shown here.
 
     await interaction.editReply({
       embeds: [infoEmbed({ title: `Server: ${server.name || identifier}`, fields })],

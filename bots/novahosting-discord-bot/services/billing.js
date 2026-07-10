@@ -6,6 +6,15 @@ const { client } = require("./featherpanel");
  * routes vary by installation/version. Endpoints below are placeholders
  * following the naming FeatherPanel Billing Core documentation uses at the
  * time of writing — verify against your installed plugin's API reference.
+ *
+ * CONFIRMED SEPARATE FROM USERS/SERVERS: the PterodactylPanelApi plugin
+ * (github.com/featherpanel-com/PterodactylPanelApi) that now powers
+ * services/users.js and services/servers.js does NOT include any billing
+ * endpoints — it only covers users, servers, nodes, locations, nests/eggs,
+ * databases, and admin API key management. If Billing Core is a different
+ * plugin on your panel, check its own generated docs/README the same way
+ * (fetch /api/openapi.json, or grep its plugin folder's routes) for the
+ * real paths before relying on the endpoints below.
  */
 
 /**
